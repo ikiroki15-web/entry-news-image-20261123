@@ -1,20 +1,37 @@
-// Entry for news-image-20261123: the day's front page ships in this repo
-// as entry.png, and this program copies those exact bytes to the output
-// directory the grader reads. No network, no randomness: every run
-// writes the same file.
-
-import { copyFileSync, existsSync, mkdirSync } from "node:fs";
-import { dirname, join } from "node:path";
+// news-image-20261123 — deterministic copier for the front-page image.
+// Locates entry.png next to this module (import.meta.url), falling back to
+// MAKEFUN_BOT_DIR, and copies it byte-for-byte into the output directory.
+import { copyFileSync, existsSync, mkdirSync, statSync } from "node:fs";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-const repoDir = dirname(fileURLToPath(import.meta.url));
-const sourceImage = join(repoDir, "entry.png");
+const here = fileURLToPath(new URL(".", import.meta.url));
+const candidates = [here];
+if (process.env.MAKEFUN_BOT_DIR) candidates.push(process.env.MAKEFUN_BOT_DIR);
 
-if (!existsSync(sourceImage)) {
-  throw new Error(`entry image missing next to main.ts: ${sourceImage}`);
+let source = "";
+for (const dir of candidates) {
+  const p = join(dir, "entry.png");
+  try {
+    if (existsSync(p) && statSync(p).isFile() && statSync(p).size > 0) {
+      source = p;
+      break;
+    }
+  } catch {
+    // unreadable candidate path — try the next one
+  }
+}
+if (!source) {
+  throw new Error("entry.png not found next to main.ts or in MAKEFUN_BOT_DIR");
 }
 
-const outputDir = process.env.MAKEFUN_OUTPUT_DIR || "/output";
-mkdirSync(outputDir, { recursive: true });
+const outDir = process.env.MAKEFUN_OUTPUT_DIR ?? "/output";
+mkdirSync(outDir, { recursive: true });
+const dest = join(outDir, "entry.png");
+copyFileSync(source, dest);
 
-copyFileSync(sourceImage, join(outputDir, "entry.png"));
+const srcSize = statSync(source).size;
+const dstSize = statSync(dest).size;
+if (srcSize !== dstSize) {
+  throw new Error(`copy size mismatch: source ${srcSize} bytes, output ${dstSize} bytes`);
+}
